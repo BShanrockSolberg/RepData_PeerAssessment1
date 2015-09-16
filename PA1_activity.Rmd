@@ -1,0 +1,135 @@
+---
+title: "Reproducible Research: Peer Assessment 1"
+output: PA1_activity.md
+  html_document: PA1_activity.HTML
+    keep_md: true
+---
+
+
+## Loading and preprocessing the data
+
+The first step is to load the data and look at its basic structure.
+```{R}
+actDF <- read.csv("activity.csv")
+str(actDF)
+summary(actDF)
+```
+This data shows 2304 NA in "steps", 288 observations per day
+As 2304/288 = 8, try out the assumption that NA are 
+entire days where no observations occurred.
+```{R}
+unlist(lapply(split(actDF$steps,actDF$date),sum))
+```
+There are exactly 8 days with sum = NA, so the assumption that
+missed data was missed for an entire day in every case is true.
+
+Also 288 observations per day breaks down into 5 minute intervals
+Test that assumption for the intervals.
+
+The way the interval is organized, it counts from 0-55, 
+then the next hour is 100-155 and shifts back to 0 at midnight. This means:
+* Day transitions in 61 days  (gap = -2355):  60 = 61-1 
+* Hour transitions in 61 days (gap = 45):   1403 = 61*(24-1)
+* other intervals in 61 days (gap = 5):    16104 = (288*61 - 1403 - 60 - 1)
+```{R}
+table(actDF$interval[2:length(actDF$interval)] -
+      actDF$interval[1:(length(actDF$interval) -1)])
+```
+What this means is that each observation can be assumed to be exactly
+5 minutes before the previous observation, with no gaps in observations,
+and that observations per day are internally consistent and identical,
+with format HM (not %H%M eg, 5 instead of 0005, 830 instead of 0830)
+
+## What is mean total number of steps taken per day?
+
+First create a vector which sums steps by day, ignoring the
+days where no observations occurred, and show the histogram
+```{R}
+stepsByDay <- unlist(lapply(split(actDF$steps,actDF$date),sum))
+sumByDay <- stepsByDay[!is.na(stepsByDay)]
+hist(sumByDay, xlab = "steps per day")
+
+```
+It is now possible to calculate mean and median steps per day
+* Mean steps/day   = 
+```{R}
+mean(sumByDay)
+```
+* Median steps/day = 
+```{R}
+median(sumByDay)
+```
+## What is the average daily activity pattern?
+
+Because NA's cross all intervals, they must first be stripped
+from the data before organizing it by intervals and looking
+for patterns within the days.  By dividing the interval by 100,
+the graph tic marks match the hours in the day, a more useful
+reference than the record count or the HMM format stored in 
+interval column.
+```{R}
+stepDF <- actDF[!is.na(actDF$steps),]
+meanByInt <- unlist(lapply(split(stepDF$steps,as.factor(stepDF$interval)),mean))
+numTime <- as.numeric(names(meanByInt))/100
+plot(x = numTime, y = meanByInt, type = "l", main = "Steps per 5 minutes", 
+     xlab = "hour of the day", ylab = "number of steps")
+```
+  
+The time period with maximum average activity and its average steps are:
+```{R}
+maxInt <- meanByInt[meanByInt == max(meanByInt)]
+names(maxInt) <- sub("[.]",":",as.numeric(names(maxInt))/100)
+maxInt
+```
+
+## Imputing missing values
+The number of rows missing step data is:
+```{R}
+sum(is.na(actDF$steps))
+```
+Replace the NA rows with the mean of recorded data for the interval:
+```{R}
+mactDF <- actDF
+mactDF$steps <- ifelse(is.na(actDF$steps),meanByInt,actDF$steps)
+msumByDay <- unlist(lapply(split(mactDF$steps,mactDF$date),sum))
+hist(msumByDay,xlab = "steps per day")
+```
+It is now possible to calculate mean and median steps per day
+* Mean steps/day   = 
+```{R}
+mean(msumByDay)
+```
+* Median steps/day = 
+```{R}
+median(msumByDay)
+```
+The mean is identical to the data with the NA excluded, which is 
+what is expected, as the values were taken from the mean of all
+individual intervals and all NA records were for entire days.
+
+The median has moved to be equal to the man, likely because there
+are 8 new days which have identical values, and mean/median were
+already close, so the median is now falling on one of the formerly
+"NA" days.
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+In order to answer this, add a new factor column to track the weekend vs weekday,
+then graph the two categories by time interval and compare.
+```{R}
+mactDF$isweekday <- weekdays(as.Date(mactDF$date))
+mactDF$isweekday <- as.factor(ifelse(mactDF$isweekday == "Saturday" |
+                    mactDF$isweekday == "Sunday","weekend","weekday"))
+weDF <- mactDF[mactDF$isweekday == "weekend",]
+meanWE <- unlist(lapply(split(weDF$steps,as.factor(weDF$interval)),mean))
+numTimeWE <- as.numeric(names(meanWE))/100
+wdDF <- mactDF[mactDF$isweekday == "weekday",]
+meanWD <- unlist(lapply(split(wdDF$steps,as.factor(wdDF$interval)),mean))
+numTimeWD <- as.numeric(names(meanWD))/100
+par(mfcol = c(2,1))
+plot(x = numTimeWE, y = meanWE, type = "l", main = "Weekend steps per 5 minutes", 
+     xlab = "hour of the day", ylab = "number of steps")
+plot(x = numTimeWD, y = meanWD, type = "l", main = "Weekday steps per 5 minutes", 
+     xlab = "hour of the day", ylab = "number of steps")
+```
+
